@@ -85,17 +85,39 @@ async def _connect_authorized_client(label, client) -> None:
     )
 
 
+_LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 def _configure_transport_security() -> None:
     """Wire MCP_ALLOWED_HOSTS/MCP_ALLOWED_ORIGINS into FastMCP's DNS-rebinding
     protection, e.g. when the server sits behind a reverse proxy on a public
     domain instead of only being reached via 127.0.0.1/localhost.
     """
+    from mcp.server.transport_security import TransportSecuritySettings
+
     raw_hosts = os.getenv("MCP_ALLOWED_HOSTS", "")
     allowed_hosts = [h.strip() for h in raw_hosts.split(",") if h.strip()]
     if not allowed_hosts:
+        if mcp.settings.host in _LOCAL_BIND_HOSTS:
+            return
+        # FastMCP is constructed at import time with its default host
+        # (127.0.0.1), and the SDK then enables DNS-rebinding protection with
+        # a localhost-only Host allowlist. MCP_HOST is only applied here, so
+        # that allowlist would survive a 0.0.0.0 bind behind a reverse proxy
+        # (Dokploy/Traefik, Alpic, ...) and reject every request carrying the
+        # public domain with 421 "Invalid Host header". Off-localhost, honour
+        # the documented default: protection is off unless MCP_ALLOWED_HOSTS
+        # opts in.
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+        print(
+            f"NOTE: MCP HTTP/SSE is bound to {mcp.settings.host!r} without "
+            "MCP_ALLOWED_HOSTS; DNS-rebinding protection is disabled. Set "
+            "MCP_ALLOWED_HOSTS=<your.domain> to re-enable it for that Host header.",
+            file=sys.stderr,
+        )
         return
-
-    from mcp.server.transport_security import TransportSecuritySettings
 
     raw_origins = os.getenv("MCP_ALLOWED_ORIGINS", "")
     allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]

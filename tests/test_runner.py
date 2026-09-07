@@ -162,12 +162,52 @@ async def test_serve_http_uses_default_host_and_port(monkeypatch):
 async def test_serve_http_leaves_transport_security_unset_by_default(monkeypatch):
     fake = _FakeMcp()
     monkeypatch.setattr(runner, "mcp", fake)
+    monkeypatch.delenv("MCP_HOST", raising=False)
     monkeypatch.delenv("MCP_ALLOWED_HOSTS", raising=False)
     monkeypatch.delenv("MCP_ALLOWED_ORIGINS", raising=False)
 
     await runner._serve("http")
 
+    # Localhost bind: keep whatever FastMCP configured at construction time.
     assert fake.settings.transport_security is None
+
+
+@pytest.mark.asyncio
+async def test_serve_http_disables_inherited_localhost_allowlist_off_localhost(
+    monkeypatch, capsys
+):
+    """Binding 0.0.0.0 behind a reverse proxy must not keep FastMCP's default
+    localhost-only Host allowlist, which would 421 every proxied request."""
+    fake = _FakeMcp()
+    monkeypatch.setattr(runner, "mcp", fake)
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")
+    monkeypatch.delenv("MCP_ALLOWED_HOSTS", raising=False)
+    monkeypatch.delenv("MCP_ALLOWED_ORIGINS", raising=False)
+
+    await runner._serve("http")
+
+    security = fake.settings.transport_security
+    assert security is not None
+    assert security.enable_dns_rebinding_protection is False
+    err = capsys.readouterr().err
+    assert "without MCP_ALLOWED_HOSTS" in err
+    assert "DNS-rebinding protection is disabled" in err
+
+
+@pytest.mark.asyncio
+async def test_serve_http_allowed_hosts_win_over_off_localhost_default(monkeypatch, capsys):
+    fake = _FakeMcp()
+    monkeypatch.setattr(runner, "mcp", fake)
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "tg-mcp.example.com")
+    monkeypatch.delenv("MCP_ALLOWED_ORIGINS", raising=False)
+
+    await runner._serve("http")
+
+    security = fake.settings.transport_security
+    assert security.enable_dns_rebinding_protection is True
+    assert security.allowed_hosts == ["tg-mcp.example.com"]
+    assert "without MCP_ALLOWED_HOSTS" not in capsys.readouterr().err
 
 
 @pytest.mark.asyncio
