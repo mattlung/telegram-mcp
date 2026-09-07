@@ -296,12 +296,18 @@ For `http` and `sse`, the server binds `MCP_HOST`:`MCP_PORT` (default
 `127.0.0.1:8765`); the streamable HTTP endpoint is `/mcp`, the SSE endpoint is
 `/sse`.
 
-If the server is reachable via a domain (e.g. behind a reverse proxy) rather
-than only `127.0.0.1`/`localhost`, set `MCP_ALLOWED_HOSTS` (and optionally
+If the server is reachable via a domain (e.g. behind a reverse proxy such as
+Dokploy/Traefik, Coolify, Caddy or nginx) rather than only
+`127.0.0.1`/`localhost`, set `MCP_ALLOWED_HOSTS` (and optionally
 `MCP_ALLOWED_ORIGINS`) to enable DNS-rebinding protection and allow that Host
 header, e.g. `MCP_ALLOWED_HOSTS=mcp.example.com`. Comma-separated; supports a
-`:*` suffix to allow any port. Left unset, DNS-rebinding protection stays off
-(the historical default).
+`:*` suffix to allow any port.
+
+Left unset, the behaviour depends on the bind address: on a localhost bind the
+MCP SDK's default localhost-only allowlist applies; on any other bind (e.g.
+`MCP_HOST=0.0.0.0` in Docker) DNS-rebinding protection is switched off and a
+note is printed at startup. Without this the SDK's localhost-only allowlist
+would reject every proxied request with `421 Invalid Host header`.
 
 Prefer `http` when more than one MCP client (or many coding-agent sessions)
 will use the server: a single long-lived process holds one Telegram
